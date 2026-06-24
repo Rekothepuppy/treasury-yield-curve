@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>U.S. Treasury Yield Curve — Historical Explorer</title>
+<script src="assets/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:        #0b0e14;
+    --panel:     #121722;
+    --panel-2:   #161c29;
+    --border:    #222b3d;
+    --grid:      rgba(120,140,170,0.08);
+    --txt:       #e6edf6;
+    --txt-dim:   #8a99b0;
+    --txt-faint: #5b6a82;
+    --accent:    #4cc2ff;   /* primary cyan          */
+    --accent-2:  #ffb454;   /* amber                 */
+    --pos:       #3fb950;   /* steepening / positive */
+    --neg:       #f85149;   /* inversion / negative  */
+    --mono: "SF Mono", "JetBrains Mono", "Roboto Mono", ui-monospace, Menlo, Consolas, monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(76,194,255,0.06), transparent 60%),
+      var(--bg);
+    color: var(--txt);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+
+  header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 1rem; flex-wrap: wrap;
+    padding: 22px 30px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .brand { display: flex; align-items: baseline; gap: 14px; }
+  .brand h1 { font-size: 17px; font-weight: 600; letter-spacing: 0.02em; margin: 0; }
+  .brand .tag {
+    font-family: var(--mono); font-size: 11px; color: var(--accent);
+    border: 1px solid rgba(76,194,255,0.35); border-radius: 4px;
+    padding: 2px 7px; letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .meta { text-align: right; font-family: var(--mono); font-size: 12px; color: var(--txt-dim); line-height: 1.5; }
+  .meta b { color: var(--txt); font-weight: 600; }
+  .dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--pos);
+         box-shadow:0 0 6px var(--pos); margin-right:6px; vertical-align:middle; }
+
+  main { padding: 22px 30px 40px; max-width: 1500px; margin: 0 auto; }
+
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
+  .kpi {
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+  }
+  .kpi .label { font-size: 11px; color: var(--txt-dim); text-transform: uppercase; letter-spacing: 0.07em; }
+  .kpi .val { font-family: var(--mono); font-size: 26px; font-weight: 600; margin-top: 6px; }
+  .kpi .sub { font-family: var(--mono); font-size: 11px; color: var(--txt-faint); margin-top: 2px; }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px 18px; margin-bottom: 16px;
+  }
+  .panel h2 {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase;
+    color: var(--txt-dim); margin: 0 0 2px;
+  }
+  .panel .hint { font-size: 11px; color: var(--txt-faint); margin: 0 0 12px; font-family: var(--mono); }
+  .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .chart-wrap { position: relative; height: 320px; }
+  .chart-wrap.short { height: 260px; }
+
+  /* ---- Time range selector ---- */
+  .toolbar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .presets { display: flex; gap: 6px; flex-wrap: wrap; }
+  .btn {
+    font-family: var(--mono); font-size: 12px; color: var(--txt-dim);
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 12px; cursor: pointer; transition: all 0.12s; letter-spacing: 0.03em;
+  }
+  .btn:hover { color: var(--txt); border-color: var(--txt-faint); }
+  .btn:disabled { opacity: 0.4; cursor: default; }
+  .btn.active { color: var(--bg); background: var(--accent); border-color: var(--accent); font-weight: 600; }
+  .daterange { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12px; color: var(--txt-dim); }
+  input[type=date], select {
+    font-family: var(--mono); font-size: 12px; color: var(--txt);
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 8px; color-scheme: dark;
+  }
+  input[type=date]:focus, select:focus { outline: none; border-color: var(--accent); }
+  .sep-v { color: var(--txt-faint); }
+
+  /* ---- Tenor toggles ---- */
+  .tenor-toggles { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .tg {
+    font-family: var(--mono); font-size: 11px; color: var(--txt-faint);
+    background: transparent; border: 1px solid var(--border); border-radius: 5px;
+    padding: 5px 10px; cursor: pointer; transition: all 0.12s; display: flex; align-items: center; gap: 6px;
+  }
+  .tg:hover { color: var(--txt-dim); }
+  .tg .swatch { width: 9px; height: 9px; border-radius: 2px; background: var(--txt-faint); opacity: 0.4; }
+  .tg.on { color: var(--txt); border-color: var(--txt-faint); }
+  .tg.on .swatch { opacity: 1; }
+
+  /* ---- Curve shape viewer ---- */
+  .scrub { display: grid; grid-template-columns: 80px 1fr 170px; align-items: center; gap: 12px; margin: 6px 0; font-family: var(--mono); font-size: 12px; }
+  .scrub label { color: var(--txt-dim); }
+  .scrub .dval { text-align: right; }
+  .scrub .dval.a { color: var(--accent); }
+  .scrub .dval.b { color: var(--accent-2); }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .scrub.b input[type=range] { accent-color: var(--accent-2); }
+  .compare-row { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 12px; color: var(--txt-dim); }
+  .switch { position: relative; display: inline-block; width: 38px; height: 20px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider-sw { position: absolute; cursor: pointer; inset: 0; background: var(--panel-2); border: 1px solid var(--border); border-radius: 20px; transition: 0.15s; }
+  .slider-sw:before { position: absolute; content: ""; height: 12px; width: 12px; left: 3px; bottom: 3px; background: var(--txt-faint); border-radius: 50%; transition: 0.15s; }
+  .switch input:checked + .slider-sw { background: rgba(76,194,255,0.25); border-color: var(--accent); }
+  .switch input:checked + .slider-sw:before { transform: translateX(18px); background: var(--accent); }
+
+  /* ---- Spread builder ---- */
+  .spread-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-family: var(--mono); font-size: 12px; color: var(--txt-dim); }
+  .spread-now .v { font-size: 24px; font-weight: 600; }
+  .spread-now .u { font-size: 11px; color: var(--txt-faint); }
+
+  /* ---- Data table ---- */
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12.5px; }
+  thead th {
+    text-align: right; color: var(--txt-dim); font-weight: 500; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 8px 10px; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; background: var(--panel);
+  }
+  thead th:first-child, tbody td:first-child { text-align: left; }
+  tbody td { padding: 7px 10px; border-bottom: 1px solid rgba(34,43,61,0.5); text-align: right; }
+  tbody tr:hover { background: rgba(76,194,255,0.04); }
+  tbody td.date { color: var(--txt-dim); }
+  tbody td.rate { color: var(--txt); }
+  tbody td.na { color: var(--txt-faint); }
+  .table-scroll { max-height: 460px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+  .pager { display: flex; align-items: center; gap: 12px; justify-content: flex-end; margin-top: 10px; font-family: var(--mono); font-size: 12px; color: var(--txt-dim); }
+
+  footer { padding: 10px 30px 30px; color: var(--txt-faint); font-family: var(--mono); font-size: 11px; }
+
+  /* ---- Pipeline health strip ---- */
+  .health {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--border); border-left-width: 3px;
+    border-radius: 10px; padding: 12px 16px; margin-bottom: 16px;
+    font-family: var(--mono); font-size: 12px; color: var(--txt-dim);
+  }
+  .health.ok   { border-left-color: var(--pos); }
+  .health.warn { border-left-color: var(--accent-2); }
+  .health.bad  { border-left-color: var(--neg); }
+  .health .led { width: 11px; height: 11px; border-radius: 50%; flex: none; background: var(--txt-faint); }
+  .health.ok   .led { background: var(--pos); box-shadow: 0 0 8px var(--pos); }
+  .health.warn .led { background: var(--accent-2); box-shadow: 0 0 8px var(--accent-2); }
+  .health.bad  .led { background: var(--neg); box-shadow: 0 0 8px var(--neg); }
+  .health .h-label { color: var(--txt); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; font-size: 11px; }
+  .health .h-msg b { color: var(--txt); font-weight: 600; }
+  .health .sep { color: var(--txt-faint); }
+
+  /* ---- Data integrity panel (collapsible) ---- */
+  .integrity { margin-top: 16px; }
+  .integrity summary {
+    list-style: none; cursor: pointer; outline: none;
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 18px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  }
+  .integrity[open] summary { border-radius: 12px 12px 0 0; border-bottom: none; }
+  .integrity summary::-webkit-details-marker { display: none; }
+  .integrity .chev { color: var(--txt-faint); font-size: 11px; transition: transform 0.15s; }
+  .integrity[open] .chev { transform: rotate(90deg); }
+  .integrity .i-title { font-size: 12px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--txt-dim); }
+  .integrity .i-sub { font-family: var(--mono); font-size: 11px; color: var(--txt-faint); margin-left: auto; }
+  .integrity .i-led { width: 11px; height: 11px; border-radius: 50%; flex: none; background: var(--txt-faint); }
+  .integrity .i-led.ok   { background: var(--pos); box-shadow: 0 0 8px var(--pos); }
+  .integrity .i-led.warn { background: var(--accent-2); box-shadow: 0 0 8px var(--accent-2); }
+  .integrity .i-led.bad  { background: var(--neg); box-shadow: 0 0 8px var(--neg); }
+  .integrity .body { border: 1px solid var(--border); border-top: none; border-radius: 0 0 12px 12px; padding: 6px 18px 14px; }
+  .check { display: flex; align-items: baseline; gap: 12px; padding: 9px 0; border-bottom: 1px solid rgba(34,43,61,0.5); font-family: var(--mono); font-size: 12px; }
+  .check:last-child { border-bottom: none; }
+  .check .badge { flex: none; width: 52px; text-align: center; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; padding: 3px 0; border-radius: 4px; }
+  .check .badge.PASS { color: var(--pos); background: rgba(63,185,80,0.12); }
+  .check .badge.WARN { color: var(--accent-2); background: rgba(255,180,84,0.12); }
+  .check .badge.FAIL { color: var(--neg); background: rgba(248,81,73,0.14); }
+  .check .c-name { color: var(--txt); font-weight: 600; flex: none; width: 130px; }
+  .check .c-detail { color: var(--txt-dim); }
+
+  @media (max-width: 760px){
+    .kpis{grid-template-columns:repeat(2,1fr);}
+    .scrub{grid-template-columns:60px 1fr 120px;}
+    .check .c-name { width: auto; } .check { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>U.S. TREASURY YIELD CURVE</h1>
+      <span class="tag">Historical Explorer</span>
+    </div>
+    <div class="meta">
+      <div><span class="dot"></span>LIVE · refresh 5m</div>
+      <div>As of <b id="as-of">—</b> · upd <span id="upd">—</span></div>
+    </div>
+  </header>
+
+  <main>
+    <!-- 1. KPIs + pipeline health -->
+    <section class="kpis" id="kpis"></section>
+
+    <div class="health" id="health">
+      <span class="led"></span>
+      <span class="h-label" id="health-label">Pipeline</span>
+      <span class="h-msg" id="health-msg">Loading health…</span>
+    </div>
+
+    <!-- 2. Global time range selector -->
+    <div class="panel">
+      <div class="toolbar">
+        <div class="presets" id="presets"></div>
+        <span class="sep-v">|</span>
+        <div class="daterange">
+          <span>From</span>
+          <input type="date" id="from" />
+          <span>To</span>
+          <input type="date" id="to" />
+        </div>
+        <span class="sep-v" id="range-note" style="margin-left:auto;color:var(--txt-faint)"></span>
+      </div>
+    </div>
+
+    <!-- 3. Tenor comparison -->
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Tenor Comparison</h2>
+          <p class="hint">Daily par yields over the selected range · hover for all selected tenors at once</p>
+        </div>
+      </div>
+      <div class="tenor-toggles" id="tenor-toggles"></div>
+      <div class="chart-wrap"><canvas id="comparisonChart"></canvas></div>
+    </div>
+
+    <!-- 4. Historical curve shape viewer -->
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Historical Curve Shape</h2>
+          <p class="hint">Scrub through history to see the full curve (1M → 30Y) on any date</p>
+        </div>
+        <div class="compare-row">
+          <span>Compare two dates</span>
+          <label class="switch"><input type="checkbox" id="cmp-toggle" checked><span class="slider-sw"></span></label>
+        </div>
+      </div>
+      <div class="scrub a">
+        <label>Date A</label>
+        <input type="range" id="curveA" min="0" max="0" value="0" />
+        <span class="dval a" id="curveA-val">—</span>
+      </div>
+      <div class="scrub b" id="scrubB">
+        <label>Date B</label>
+        <input type="range" id="curveB" min="0" max="0" value="0" />
+        <span class="dval b" id="curveB-val">—</span>
+      </div>
+      <div class="chart-wrap"><canvas id="curveChart"></canvas></div>
+    </div>
+
+    <!-- 5. Spread builder -->
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Spread Builder</h2>
+          <p class="hint">Tenor A minus Tenor B over the selected range · dashed line = zero (inversion)</p>
+        </div>
+        <div class="spread-controls">
+          <select id="spreadA"></select>
+          <span>minus</span>
+          <select id="spreadB"></select>
+          <span class="sep-v">=</span>
+          <span class="spread-now"><span class="v" id="spread-now">—</span> <span class="u">bps now</span></span>
+        </div>
+      </div>
+      <div class="chart-wrap short"><canvas id="spreadChart"></canvas></div>
+    </div>
+
+    <!-- 6. Data table -->
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Raw Daily Rates</h2>
+          <p class="hint" id="table-hint">Selected tenors over the selected range · newest first</p>
+        </div>
+        <button class="btn" id="csv-btn">⤓ Download CSV</button>
+      </div>
+      <div class="table-scroll"><table id="dataTable"><thead></thead><tbody></tbody></table></div>
+      <div class="pager" id="pager"></div>
+    </div>
+
+    <!-- Data integrity (collapsible) -->
+    <details class="integrity" id="integrity">
+      <summary>
+        <span class="chev">▶</span>
+        <span class="i-led" id="integrity-led"></span>
+        <span class="i-title">Data Integrity Checks</span>
+        <span class="i-sub" id="integrity-sub">—</span>
+      </summary>
+      <div class="body" id="integrity-body"></div>
+    </details>
+  </main>
+
+  <footer>Source: U.S. Department of the Treasury · PostgreSQL <code>treasury_yields.daily_rates</code> · self-contained (no external CDN) · auto-refresh every 5 minutes</footer>
+
+<script>
+const FONT = '"SF Mono","JetBrains Mono","Roboto Mono",monospace';
+Chart.defaults.color = '#8a99b0';
+Chart.defaults.font.family = FONT;
+Chart.defaults.font.size = 11;
+
+const C = { accent:'#4cc2ff', accent2:'#ffb454', pos:'#3fb950', neg:'#f85149', grid:'rgba(120,140,170,0.08)', txt:'#e6edf6', faint:'#5b6a82' };
+
+// One distinct color per tenor (curve order, short -> long maturity).
+const TENOR_COLORS = {
+  y1m:'#4cc2ff', y2m:'#36c5b0', y3m:'#3fb950', y6m:'#9ece6a', y1y:'#e3b341',
+  y2y:'#ffb454', y3y:'#ff9b50', y5y:'#f85149', y7y:'#ff7b9c', y10y:'#bc8cff',
+  y20y:'#a371f7', y30y:'#79c0ff'
+};
+
+// ---- crosshair: vertical dashed line tracking the hovered point ----
+const crosshairPlugin = {
+  id:'crosshair',
+  afterDraw(chart){
+    const act = chart.tooltip && chart.tooltip._active;
+    if(!act || !act.length) return;
+    const x = act[0].element.x;
+    const {top, bottom} = chart.chartArea;
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom);
+    ctx.lineWidth = 1; ctx.setLineDash([4,3]); ctx.strokeStyle = 'rgba(138,153,176,0.5)';
+    ctx.stroke(); ctx.restore();
+  }
+};
+Chart.register(crosshairPlugin);
+
+// snap to nearest data point across the vertical band (no interpolation)
+const HOVER = { mode:'index', intersect:false, axis:'x' };
+const TT = {
+  backgroundColor:'rgba(11,14,20,0.96)', borderColor:'#222b3d', borderWidth:1,
+  titleColor:'#e6edf6', bodyColor:'#e6edf6',
+  titleFont:{ family:FONT, size:11, weight:'600' }, bodyFont:{ family:FONT, size:12 },
+  padding:10, cornerRadius:6, caretSize:5, boxPadding:4,
+};
+
+function fmt(v, d=2){ return v===null||v===undefined ? '—' : Number(v).toFixed(d); }
+
+// ===== global state =====
+const state = {
+  dateMin:null, dateMax:null,
+  from:null, to:null, preset:'1Y',
+  tenorList:[],                       // [{key,label}]
+  selected:new Set(['y3m','y2y','y10y']),
+  history:null,                       // last /api/history payload
+  rangeDates:[],                      // trading dates in range (slider domain)
+  compare:true,
+  spreadA:'y10y', spreadB:'y2y',
+  page:0, pageSize:250,
+};
+let comparisonChart, curveChart, spreadChart;
+const curveCache = {};                // isoDate -> /api/curve payload
+
+// ===== STATIC DATA LAYER =========================================================
+// This build has no server and no database. On boot, loadStore() pulls the
+// pre-exported JSON snapshots (data/*.json) into memory, and apiFetch() then
+// resolves the very same endpoint URLs the live dashboard used -- by slicing or
+// looking up that in-memory data. Every original call site is unchanged apart
+// from `fetch(` -> `apiFetch(`, so the UI and interactivity stay identical.
+const STORE = { tenors:null, history:null, curveIndex:null, spreadIndex:null,
+                data:null, health:null, integrity:null, curveDates:[] };
+
+async function loadStore(){
+  const names = ['tenors','history','curve_index','spread_index','data','health','integrity'];
+  const [tenors,history,curveIndex,spreadIndex,data,health,integrity] =
+    await Promise.all(names.map(n => fetch('data/'+n+'.json',{cache:'no-store'}).then(r=>r.json())));
+  STORE.tenors=tenors; STORE.history=history; STORE.curveIndex=curveIndex;
+  STORE.spreadIndex=spreadIndex; STORE.data=data; STORE.health=health; STORE.integrity=integrity;
+  STORE.curveDates = Object.keys(curveIndex).sort();
+}
+
+const _tenorMeta = ()=> STORE.tenors.tenors;                    // [{key,label}] in curve order
+const _labelOf   = (key)=>{ const t=_tenorMeta().find(x=>x.key===key); return t?t.label:key; };
+const _orderKeys = ()=> _tenorMeta().map(t=>t.key);
+
+// inclusive [from,to] index window over an ascending ISO-date array
+function _window(dates, from, to){
+  let s=0; while(s<dates.length && dates[s] < from) s++;
+  let e=dates.length-1; while(e>=0 && dates[e] > to) e--;
+  return [s,e];
+}
+
+// /api/history: pick tenors + slice the full in-memory history to [from,to]
+function _history(tenorsCsv, from, to){
+  const H = STORE.history;
+  const want = new Set((tenorsCsv ? tenorsCsv.split(',') : ['y3m','y2y','y10y']).filter(k=>H.series[k]));
+  const keys = _orderKeys().filter(k=>want.has(k));            // preserve curve order
+  const f = from || H.from, t = to || H.to;
+  const [s,e] = _window(H.dates, f, t);
+  const ok = s<=e;
+  const dates = ok ? H.dates.slice(s,e+1) : [];
+  const series = {}; keys.forEach(k=> series[k] = ok ? H.series[k].slice(s,e+1) : []);
+  return { from:f, to:t, tenors:keys.map(k=>({key:k,label:_labelOf(k)})), dates, series, count:dates.length };
+}
+
+// /api/spread: re-attach the shared dates array (factored out of each pair to
+// avoid 144x duplication) and slice to [from,to]
+function _spread(t1, t2, from, to){
+  const SI = STORE.spreadIndex, D = SI.dates;
+  const pair = SI.pairs[t1+'_'+t2];
+  const f = from || SI.from, t = to || SI.to;
+  const [s,e] = _window(D, f, t);
+  const ok = s<=e;
+  const dates  = ok ? D.slice(s,e+1) : [];
+  const spread = (pair && ok) ? pair.spread.slice(s,e+1) : [];
+  let latest=null, latest_date=null;
+  for(let i=0;i<spread.length;i++){ if(spread[i]!==null){ latest=spread[i]; latest_date=dates[i]; } }
+  return { from:f, to:t,
+    t1: pair?pair.t1:{key:t1,label:_labelOf(t1)},
+    t2: pair?pair.t2:{key:t2,label:_labelOf(t2)},
+    dates, spread, latest, latest_date };
+}
+
+// /api/curve: direct lookup, with the API's prior-trading-day fallback
+function _curve(iso){
+  const idx = STORE.curveIndex;
+  if(idx[iso]) return idx[iso];
+  const ds = STORE.curveDates;                                  // ascending
+  let lo=0, hi=ds.length-1, ans=-1;
+  while(lo<=hi){ const m=(lo+hi)>>1; if(ds[m]<=iso){ ans=m; lo=m+1; } else hi=m-1; }
+  const base = idx[ans>=0 ? ds[ans] : ds[0]];
+  return { requested: iso, date: base.date, points: base.points };
+}
+
+// Drop-in stand-in for fetch(): returns a Response-like object with .json().
+function apiFetch(url){
+  const u = new URL(url, location.href), p = u.pathname, q = u.searchParams;
+  let data;
+  if(p.endsWith('/api/tenors'))         data = STORE.tenors;
+  else if(p.endsWith('/api/history'))   data = _history(q.get('tenors'), q.get('from'), q.get('to'));
+  else if(p.endsWith('/api/spread'))    data = _spread(q.get('t1'), q.get('t2'), q.get('from'), q.get('to'));
+  else if(p.endsWith('/api/curve'))     data = _curve(q.get('date'));
+  else if(p.endsWith('/api/data'))      data = STORE.data;
+  else if(p.endsWith('/api/health'))    data = STORE.health;
+  else if(p.endsWith('/api/integrity')) data = STORE.integrity;
+  else throw new Error('unknown endpoint '+p);
+  return { ok:true, status:200, json:()=>data };
+}
+// ===== END STATIC DATA LAYER =====================================================
+
+// ===== date helpers =====
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function shortDate(iso){ if(!iso) return '—'; const [y,m,d]=iso.slice(0,10).split('-').map(Number); return MONTHS[m-1]+' '+d+', '+y; }
+function isoMinus(iso, {days=0, months=0, years=0}){
+  const d = new Date(iso+'T00:00:00');
+  if(years)  d.setFullYear(d.getFullYear()-years);
+  if(months) d.setMonth(d.getMonth()-months);
+  if(days)   d.setDate(d.getDate()-days);
+  return d.toISOString().slice(0,10);
+}
+function clampDate(iso){
+  if(state.dateMin && iso < state.dateMin) return state.dateMin;
+  if(state.dateMax && iso > state.dateMax) return state.dateMax;
+  return iso;
+}
+
+const PRESETS = [
+  ['1M',{months:1}], ['3M',{months:3}], ['6M',{months:6}], ['1Y',{years:1}],
+  ['3Y',{years:3}], ['5Y',{years:5}], ['10Y',{years:10}], ['Max',null],
+];
+
+function rangeForPreset(p){
+  const to = state.dateMax;
+  if(p==='Max') return [state.dateMin, to];
+  const spec = PRESETS.find(x=>x[0]===p)[1];
+  return [clampDate(isoMinus(to, spec)), to];
+}
+
+// ===== boot =====
+async function init(){
+  const t = await (await apiFetch('/api/tenors', {cache:'no-store'})).json();
+  state.dateMin = t.date_min; state.dateMax = t.date_max;
+  state.tenorList = t.tenors;
+
+  buildPresets(); buildTenorToggles(); buildSpreadSelects();
+
+  // default global range = 1Y; default curve compare = latest vs 1 year ago
+  const [f, to] = rangeForPreset('1Y');
+  state.from = f; state.to = to;
+  const fromEl = document.getElementById('from'), toEl = document.getElementById('to');
+  fromEl.value = f; toEl.value = to;
+  fromEl.min = state.dateMin; fromEl.max = state.dateMax;
+  toEl.min = state.dateMin;   toEl.max = state.dateMax;
+
+  wireControls();
+  await reloadRange();         // history + spread + table + curve slider
+  loadHeader(); loadHealth(); loadIntegrity();
+}
+
+function buildPresets(){
+  document.getElementById('presets').innerHTML =
+    PRESETS.map(([p])=>`<button class="btn${p===state.preset?' active':''}" data-p="${p}">${p}</button>`).join('');
+  document.querySelectorAll('#presets .btn').forEach(b=>{
+    b.onclick = ()=>{
+      state.preset = b.dataset.p;
+      document.querySelectorAll('#presets .btn').forEach(x=>x.classList.toggle('active', x===b));
+      const [f, to] = rangeForPreset(state.preset);
+      state.from=f; state.to=to;
+      document.getElementById('from').value=f; document.getElementById('to').value=to;
+      reloadRange();
+    };
+  });
+}
+
+function buildTenorToggles(){
+  document.getElementById('tenor-toggles').innerHTML = state.tenorList.map(t=>{
+    const on = state.selected.has(t.key);
+    return `<button class="tg${on?' on':''}" data-k="${t.key}">
+      <span class="swatch" style="background:${TENOR_COLORS[t.key]}"></span>${t.label}</button>`;
+  }).join('');
+  document.querySelectorAll('#tenor-toggles .tg').forEach(b=>{
+    b.onclick = ()=>{
+      const k = b.dataset.k;
+      if(state.selected.has(k)){
+        if(state.selected.size===1) return;      // keep at least one selected
+        state.selected.delete(k);
+      } else state.selected.add(k);
+      b.classList.toggle('on', state.selected.has(k));
+      loadHistory();                              // only tenors changed
+    };
+  });
+}
+
+function buildSpreadSelects(){
+  const opts = state.tenorList.map(t=>`<option value="${t.key}">${t.label}</option>`).join('');
+  const a = document.getElementById('spreadA'), b = document.getElementById('spreadB');
+  a.innerHTML = opts; b.innerHTML = opts;
+  a.value = state.spreadA; b.value = state.spreadB;
+  a.onchange = ()=>{ state.spreadA=a.value; loadSpread(); };
+  b.onchange = ()=>{ state.spreadB=b.value; loadSpread(); };
+}
+
+function wireControls(){
+  document.getElementById('from').onchange = (e)=>{ state.from=e.target.value; markCustom(); reloadRange(); };
+  document.getElementById('to').onchange   = (e)=>{ state.to=e.target.value; markCustom(); reloadRange(); };
+  document.getElementById('cmp-toggle').onchange = (e)=>{
+    state.compare = e.target.checked;
+    document.getElementById('scrubB').style.display = state.compare ? '' : 'none';
+    drawCurve();
+  };
+  document.getElementById('curveA').oninput = (e)=>{ setCurveLabel('A', +e.target.value); drawCurve(); };
+  document.getElementById('curveB').oninput = (e)=>{ setCurveLabel('B', +e.target.value); drawCurve(); };
+  document.getElementById('csv-btn').onclick = downloadCSV;
+}
+
+function markCustom(){
+  state.preset = null;
+  document.querySelectorAll('#presets .btn').forEach(x=>x.classList.remove('active'));
+}
+
+// ===== data: range-driven =====
+async function reloadRange(){
+  await loadHistory();          // also rebuilds curve slider domain + table
+  loadSpread();
+}
+
+async function loadHistory(){
+  const tenors = state.tenorList.map(t=>t.key).filter(k=>state.selected.has(k)).join(',');
+  const url = `/api/history?tenors=${tenors}&from=${state.from}&to=${state.to}`;
+  const d = await (await apiFetch(url,{cache:'no-store'})).json();
+  state.history = d;
+  state.rangeDates = d.dates;
+  document.getElementById('range-note').textContent =
+    `${d.count.toLocaleString()} trading days · ${shortDate(d.from)} → ${shortDate(d.to)}`;
+  drawComparison();
+  rebuildCurveSlider();
+  state.page = 0;
+  renderTable();
+}
+
+function monthTick(){
+  return function(val){ const s=this.getLabelForValue(val); return s?s.slice(0,7):''; };
+}
+
+function drawComparison(){
+  const d = state.history;
+  const datasets = d.tenors.map(t=>({
+    label:t.label, data:d.series[t.key], borderColor:TENOR_COLORS[t.key],
+    backgroundColor:'transparent', borderWidth:1.6, pointRadius:0, tension:0.15, spanGaps:true,
+  }));
+  comparisonChart && comparisonChart.destroy();
+  comparisonChart = new Chart(document.getElementById('comparisonChart'), {
+    type:'line',
+    data:{ labels:d.dates, datasets },
+    options:{ responsive:true, maintainAspectRatio:false, interaction:HOVER, hover:HOVER,
+      plugins:{ legend:{display:true, labels:{boxWidth:10,usePointStyle:true,pointStyle:'line'}},
+        tooltip:{...TT, usePointStyle:true, callbacks:{
+          title:items=>items.length?shortDate(d.dates[items[0].dataIndex]):'',
+          label:c=>' '+c.dataset.label+': '+fmt(c.parsed.y)+'%'}}},
+      scales:{ x:{grid:{color:C.grid}, ticks:{maxRotation:0, autoSkip:true, maxTicksLimit:12, callback:monthTick()}},
+        y:{grid:{color:C.grid}, ticks:{callback:v=>v+'%'}}}}
+  });
+}
+
+// ===== spread =====
+async function loadSpread(){
+  const url = `/api/spread?t1=${state.spreadA}&t2=${state.spreadB}&from=${state.from}&to=${state.to}`;
+  const d = await (await apiFetch(url,{cache:'no-store'})).json();
+  const bps = d.spread.map(v=>v===null?null:Math.round(v*100));
+  const now = d.latest===null ? null : Math.round(d.latest*100);
+  const el = document.getElementById('spread-now');
+  el.textContent = now===null ? '—' : (now>0?'+':'')+now;
+  el.style.color = now===null ? C.txt : (now>=0 ? C.pos : C.neg);
+
+  const zeroLine = { id:'zero', afterDraw(chart){
+    const {ctx, chartArea, scales} = chart; const y = scales.y.getPixelForValue(0);
+    ctx.save(); ctx.strokeStyle='rgba(248,81,73,0.55)'; ctx.lineWidth=1; ctx.setLineDash([5,4]);
+    ctx.beginPath(); ctx.moveTo(chartArea.left,y); ctx.lineTo(chartArea.right,y); ctx.stroke(); ctx.restore();
+  }};
+  spreadChart && spreadChart.destroy();
+  spreadChart = new Chart(document.getElementById('spreadChart'), {
+    type:'line',
+    data:{ labels:d.dates, datasets:[{ label:`${d.t1.label}−${d.t2.label} (bps)`, data:bps,
+      borderColor:C.accent, borderWidth:1.6, pointRadius:0, tension:0.15, fill:true, spanGaps:true,
+      backgroundColor:(c)=>{ const g=c.chart.ctx.createLinearGradient(0,0,0,260);
+        g.addColorStop(0,'rgba(76,194,255,0.20)'); g.addColorStop(1,'rgba(76,194,255,0)'); return g; } }]},
+    options:{ responsive:true, maintainAspectRatio:false, interaction:HOVER, hover:HOVER,
+      plugins:{ legend:{display:false}, tooltip:{...TT, displayColors:false, callbacks:{
+        title:items=>items.length?shortDate(d.dates[items[0].dataIndex]):'',
+        label:c=>' '+(c.parsed.y>0?'+':'')+c.parsed.y+' bps'}}},
+      scales:{ x:{grid:{color:C.grid}, ticks:{maxRotation:0, autoSkip:true, maxTicksLimit:12, callback:monthTick()}},
+        y:{grid:{color:C.grid}, ticks:{callback:v=>(v>0?'+':'')+v}}}},
+    plugins:[zeroLine]
+  });
+}
+
+// ===== curve shape viewer =====
+function rebuildCurveSlider(){
+  const n = state.rangeDates.length;
+  const a = document.getElementById('curveA'), b = document.getElementById('curveB');
+  if(n===0){ a.max=0; b.max=0; setCurveLabel('A',-1); setCurveLabel('B',-1); return; }
+  a.max = n-1; b.max = n-1;
+  const idxA = n-1;                                  // latest in range
+  const targetB = clampDate(isoMinus(state.rangeDates[idxA], {years:1}));
+  let idxB = state.rangeDates.findIndex(d=>d>=targetB);
+  if(idxB<0) idxB = 0;
+  a.value = idxA; b.value = idxB;
+  setCurveLabel('A', idxA); setCurveLabel('B', idxB);
+  drawCurve();
+}
+function setCurveLabel(which, idx){
+  const iso = idx>=0 ? state.rangeDates[idx] : null;
+  document.getElementById('curve'+which+'-val').textContent = iso ? shortDate(iso) : '—';
+}
+
+async function fetchCurve(iso){
+  if(curveCache[iso]) return curveCache[iso];
+  const d = await (await apiFetch(`/api/curve?date=${iso}`,{cache:'no-store'})).json();
+  curveCache[iso] = d;                               // .date (actual trading day) + .points
+  return d;
+}
+
+let curveDrawToken = 0;
+async function drawCurve(){
+  const token = ++curveDrawToken;
+  const dates = state.rangeDates;
+  if(!dates.length) return;
+  const isoA = dates[+document.getElementById('curveA').value];
+  const isoB = dates[+document.getElementById('curveB').value];
+  const reqs = [fetchCurve(isoA)];
+  if(state.compare) reqs.push(fetchCurve(isoB));
+  const res = await Promise.all(reqs);
+  if(token !== curveDrawToken) return;               // a newer scrub superseded this draw
+
+  const labels = res[0].points.map(p=>p.tenor);
+  const datasets = [{
+    label:shortDate(res[0].date), data:res[0].points.map(p=>p.rate),
+    borderColor:C.accent, backgroundColor:'transparent', borderWidth:2,
+    pointRadius:3, pointBackgroundColor:C.accent, pointBorderColor:'#0b0e14', tension:0.3, spanGaps:true,
+  }];
+  if(state.compare && res[1]){
+    datasets.push({
+      label:shortDate(res[1].date), data:res[1].points.map(p=>p.rate),
+      borderColor:C.accent2, backgroundColor:'transparent', borderWidth:2,
+      pointRadius:3, pointBackgroundColor:C.accent2, pointBorderColor:'#0b0e14', tension:0.3, spanGaps:true,
+    });
+  }
+  curveChart && curveChart.destroy();
+  curveChart = new Chart(document.getElementById('curveChart'), {
+    type:'line', data:{ labels, datasets },
+    options:{ responsive:true, maintainAspectRatio:false, interaction:HOVER, hover:HOVER,
+      plugins:{ legend:{display:true, labels:{boxWidth:10,usePointStyle:true,pointStyle:'line'}},
+        tooltip:{...TT, usePointStyle:true, callbacks:{
+          title:items=>items.length?'Tenor '+items[0].label:'',
+          label:c=>' '+c.dataset.label+': '+fmt(c.parsed.y)+'%'}}},
+      scales:{ x:{grid:{color:C.grid}}, y:{grid:{color:C.grid}, ticks:{callback:v=>v+'%'}}}}
+  });
+}
+
+// ===== data table =====
+function tableRows(){
+  const d = state.history; if(!d) return {cols:[], rows:[]};
+  const cols = d.tenors;
+  const rows = [];
+  for(let i=d.dates.length-1; i>=0; i--){            // newest first
+    rows.push([d.dates[i], ...cols.map(t=>d.series[t.key][i])]);
+  }
+  return {cols, rows};
+}
+function renderTable(){
+  const {cols, rows} = tableRows();
+  const total = rows.length;
+  const paginate = total > 500;
+  const start = paginate ? state.page*state.pageSize : 0;
+  const end = paginate ? Math.min(start+state.pageSize, total) : total;
+  const view = rows.slice(start, end);
+
+  document.querySelector('#dataTable thead').innerHTML =
+    '<tr><th>Date</th>'+cols.map(c=>`<th>${c.label} %</th>`).join('')+'</tr>';
+  document.querySelector('#dataTable tbody').innerHTML = view.map(r=>{
+    const cells = r.slice(1).map(v=> v===null
+      ? '<td class="na">—</td>' : `<td class="rate">${fmt(v)}</td>`).join('');
+    return `<tr><td class="date">${shortDate(r[0])}</td>${cells}</tr>`;
+  }).join('');
+  document.getElementById('table-hint').textContent =
+    `${cols.map(c=>c.label).join(' · ')} · ${total.toLocaleString()} rows · newest first`;
+
+  const pager = document.getElementById('pager');
+  if(paginate){
+    const pages = Math.ceil(total/state.pageSize);
+    pager.innerHTML =
+      `<button class="btn" id="prev" ${state.page===0?'disabled':''}>‹ Prev</button>`+
+      `<span>${(start+1).toLocaleString()}–${end.toLocaleString()} of ${total.toLocaleString()} · page ${state.page+1}/${pages}</span>`+
+      `<button class="btn" id="next" ${state.page>=pages-1?'disabled':''}>Next ›</button>`;
+    const prev=document.getElementById('prev'), next=document.getElementById('next');
+    if(prev) prev.onclick=()=>{ if(state.page>0){state.page--; renderTable(); document.querySelector('.table-scroll').scrollTop=0;} };
+    if(next) next.onclick=()=>{ if(state.page<pages-1){state.page++; renderTable(); document.querySelector('.table-scroll').scrollTop=0;} };
+  } else pager.innerHTML = `<span>${total.toLocaleString()} rows</span>`;
+}
+
+function downloadCSV(){
+  const {cols, rows} = tableRows();
+  const header = ['date', ...cols.map(c=>c.label)].join(',');
+  const body = rows.map(r=>[r[0], ...r.slice(1).map(v=>v===null?'':v)].join(',')).join('\n');
+  const blob = new Blob([header+'\n'+body], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `treasury_yields_${state.from}_to_${state.to}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+// ===== header / health / integrity (latest, range-independent) =====
+async function loadHeader(){
+  const d = await (await apiFetch('/api/data',{cache:'no-store'})).json();
+  document.getElementById('as-of').textContent = d.as_of;
+  document.getElementById('upd').textContent = (d.generated_at||'').replace('T',' ');
+  const get = t => (d.summary.find(s=>s.tenor===t)||{}).rate;
+  const spread = d.spread_latest;
+  const spreadColor = spread===null ? C.txt : (spread>=0 ? C.pos : C.neg);
+  const kpis = [
+    {label:'3M Bill', val:fmt(get('3M')), sub:'%'},
+    {label:'2Y Note', val:fmt(get('2Y')), sub:'%', color:C.accent},
+    {label:'10Y Note', val:fmt(get('10Y')), sub:'%', color:C.accent2},
+    {label:'2s10s Spread', val:(spread===null?'—':(spread>0?'+':'')+fmt(spread)), sub:'bps · '+(spread<0?'inverted':'normal'), color:spreadColor},
+  ];
+  document.getElementById('kpis').innerHTML = kpis.map(k=>`
+    <div class="kpi"><div class="label">${k.label}</div>
+      <div class="val" style="color:${k.color||C.txt}">${k.val}</div>
+      <div class="sub">${k.sub}</div></div>`).join('');
+}
+
+function shortDT(iso){ if(!iso) return '—'; const d=shortDate(iso); const t=(iso.split('T')[1]||'').slice(0,5); return t?d+' '+t:d; }
+function agoPhrase(iso){
+  if(!iso) return '';
+  const then=new Date(iso.slice(0,10)+'T00:00:00'), now=new Date(); now.setHours(0,0,0,0);
+  const n=Math.round((now-then)/86400000);
+  if(n<=0) return 'today'; if(n===1) return 'yesterday'; return n+' days ago';
+}
+async function loadHealth(){
+  const el = document.getElementById('health');
+  let h;
+  try { const r=await apiFetch('/api/health',{cache:'no-store'}); if(!r.ok) throw 0; h=await r.json(); }
+  catch(e){ el.className='health bad'; document.getElementById('health-msg').textContent='health endpoint unavailable'; return; }
+  const stale=h.business_days_stale, cronOk=h.last_cron_status==='OK', cronErr=h.last_cron_status==='ERROR';
+  let cls,label;
+  if(stale>=4||cronErr){cls='bad';label='Degraded';}
+  else if(stale>=2){cls='warn';label='Stale';}
+  else if(cronOk){cls='ok';label='Healthy';}
+  else if(h.last_cron_status==='NO DATA'){cls='ok';label='Healthy';}
+  else {cls='warn';label='Check cron';}
+  el.className='health '+cls;
+  document.getElementById('health-label').textContent=label;
+  const staleWord = stale===0?'current':stale+' business day'+(stale===1?'':'s')+' behind';
+  const cronTxt = h.last_cron_run ? 'cron last ran '+shortDT(h.last_cron_run)+' · '+h.last_cron_status : 'cron has not run yet';
+  document.getElementById('health-msg').innerHTML =
+    'Data current as of <b>'+shortDate(h.latest_data_date)+'</b> ('+staleWord+')'
+    +' <span class="sep">·</span> updated '+agoPhrase(h.latest_data_date)
+    +' <span class="sep">·</span> '+cronTxt
+    +' <span class="sep">·</span> '+(h.row_count!=null?Number(h.row_count).toLocaleString():'—')+' rows';
+}
+async function loadIntegrity(){
+  const led=document.getElementById('integrity-led'), sub=document.getElementById('integrity-sub'), body=document.getElementById('integrity-body');
+  let d;
+  try { const r=await apiFetch('/api/integrity',{cache:'no-store'}); if(!r.ok) throw 0; d=await r.json(); }
+  catch(e){ led.className='i-led bad'; sub.textContent='unavailable'; body.innerHTML='<div class="check"><span class="c-detail">integrity endpoint unavailable</span></div>'; return; }
+  const map={PASS:'ok',WARN:'warn',FAIL:'bad'};
+  led.className='i-led '+(map[d.overall]||'');
+  const counts=d.checks.reduce((a,c)=>{a[c.status]=(a[c.status]||0)+1;return a;},{});
+  sub.textContent=(counts.PASS||0)+' pass · '+(counts.WARN||0)+' warn · '+(counts.FAIL||0)+' fail';
+  body.innerHTML=d.checks.map(c=>`<div class="check"><span class="badge ${c.status}">${c.status}</span>
+    <span class="c-name">${c.name}</span><span class="c-detail">${c.detail}</span></div>`).join('');
+}
+
+// ===== auto-refresh (data only, every 5 min) =====
+function refreshAll(){
+  for(const k in curveCache) delete curveCache[k];   // latest day may have gained a row
+  loadHeader(); loadHealth(); loadIntegrity();
+  loadHistory(); loadSpread();
+}
+loadStore().then(init);
+setInterval(refreshAll, 5*60*1000);
+</script>
+</body>
+</html>
