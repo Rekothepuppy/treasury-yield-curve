@@ -112,6 +112,12 @@
   .scrub { display: grid; grid-template-columns: 80px 1fr 170px; align-items: center; gap: 12px; margin: 6px 0; font-family: var(--mono); font-size: 12px; }
   .scrub label { color: var(--txt-dim); }
   .scrub .dval { text-align: right; }
+  .scrub input.dval { font-family: var(--mono); font-size: 12px; text-align: right;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 8px; color-scheme: dark; cursor: pointer; transition: border-color 0.15s; }
+  .scrub input.dval:hover { border-color: var(--txt-faint); }
+  .scrub input.dval:focus { outline: none; border-color: var(--accent); }
+  .scrub.b input.dval:focus { border-color: var(--accent-2); }
   .scrub .dval.a { color: var(--accent); }
   .scrub .dval.b { color: var(--accent-2); }
   input[type=range] { width: 100%; accent-color: var(--accent); }
@@ -266,12 +272,12 @@
       <div class="scrub a">
         <label>Date A</label>
         <input type="range" id="curveA" min="0" max="0" value="0" />
-        <span class="dval a" id="curveA-val">—</span>
+        <input type="date" class="dval a" id="curveA-date" aria-label="Date A" />
       </div>
       <div class="scrub b" id="scrubB">
         <label>Date B</label>
         <input type="range" id="curveB" min="0" max="0" value="0" />
-        <span class="dval b" id="curveB-val">—</span>
+        <input type="date" class="dval b" id="curveB-date" aria-label="Date B" />
       </div>
       <div class="chart-wrap"><canvas id="curveChart"></canvas></div>
     </div>
@@ -568,6 +574,8 @@ function wireControls(){
   };
   document.getElementById('curveA').oninput = (e)=>{ setCurveLabel('A', +e.target.value); drawCurve(); };
   document.getElementById('curveB').oninput = (e)=>{ setCurveLabel('B', +e.target.value); drawCurve(); };
+  document.getElementById('curveA-date').onchange = (e)=>{ pickCurveDate('A', e.target.value); };
+  document.getElementById('curveB-date').onchange = (e)=>{ pickCurveDate('B', e.target.value); };
   document.getElementById('csv-btn').onclick = downloadCSV;
 }
 
@@ -616,7 +624,7 @@ function drawComparison(){
           title:items=>items.length?shortDate(d.dates[items[0].dataIndex]):'',
           label:c=>' '+c.dataset.label+': '+fmt(c.parsed.y)+'%'}}},
       scales:{ x:{grid:{color:C.grid}, ticks:{maxRotation:0, autoSkip:true, maxTicksLimit:12, callback:monthTick()}},
-        y:{grid:{color:C.grid}, ticks:{callback:v=>v+'%'}}}}
+        y:{grid:{color:C.grid}, ticks:{callback:v=>Math.round(v*100)/100+'%'}}}}
   });
 }
 
@@ -647,7 +655,7 @@ async function loadSpread(){
         title:items=>items.length?shortDate(d.dates[items[0].dataIndex]):'',
         label:c=>' '+(c.parsed.y>0?'+':'')+c.parsed.y+' bps'}}},
       scales:{ x:{grid:{color:C.grid}, ticks:{maxRotation:0, autoSkip:true, maxTicksLimit:12, callback:monthTick()}},
-        y:{grid:{color:C.grid}, ticks:{callback:v=>(v>0?'+':'')+v}}}},
+        y:{grid:{color:C.grid}, ticks:{callback:v=>(v>0?'+':'')+Math.round(v*10)/10}}}},
     plugins:[zeroLine]
   });
 }
@@ -668,7 +676,32 @@ function rebuildCurveSlider(){
 }
 function setCurveLabel(which, idx){
   const iso = idx>=0 ? state.rangeDates[idx] : null;
-  document.getElementById('curve'+which+'-val').textContent = iso ? shortDate(iso) : '—';
+  const el = document.getElementById('curve'+which+'-date');
+  const ds = state.rangeDates;
+  if(ds.length){ el.min = ds[0]; el.max = ds[ds.length-1]; }   // confine picker to the loaded range
+  el.value = iso || '';
+}
+// Map a picked calendar date to the nearest available trading-day index.
+function nearestRangeIdx(iso){
+  const ds = state.rangeDates;
+  if(!ds.length || !iso) return -1;
+  if(iso <= ds[0]) return 0;
+  if(iso >= ds[ds.length-1]) return ds.length-1;
+  let lo=0, hi=ds.length-1;
+  while(lo<hi){ const mid=(lo+hi)>>1; if(ds[mid] < iso) lo=mid+1; else hi=mid; }
+  if(lo>0){
+    const di=+new Date(iso), dp=+new Date(ds[lo-1]), dn=+new Date(ds[lo]);
+    if(Math.abs(di-dp) <= Math.abs(dn-di)) return lo-1;
+  }
+  return lo;
+}
+// Date-picker selection: snap to the nearest trading day, sync the slider, redraw.
+function pickCurveDate(which, iso){
+  const idx = nearestRangeIdx(iso);
+  if(idx<0){ setCurveLabel(which, +document.getElementById('curve'+which).value); return; }
+  document.getElementById('curve'+which).value = idx;
+  setCurveLabel(which, idx);
+  drawCurve();
 }
 
 async function fetchCurve(iso){
@@ -711,7 +744,7 @@ async function drawCurve(){
         tooltip:{...TT, usePointStyle:true, callbacks:{
           title:items=>items.length?'Tenor '+items[0].label:'',
           label:c=>' '+c.dataset.label+': '+fmt(c.parsed.y)+'%'}}},
-      scales:{ x:{grid:{color:C.grid}}, y:{grid:{color:C.grid}, ticks:{callback:v=>v+'%'}}}}
+      scales:{ x:{grid:{color:C.grid}}, y:{grid:{color:C.grid}, ticks:{callback:v=>Math.round(v*100)/100+'%'}}}}
   });
 }
 
